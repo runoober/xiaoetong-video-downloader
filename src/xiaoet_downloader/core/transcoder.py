@@ -15,25 +15,32 @@ from ..utils.logger import logger
 class VideoTranscoder:
     """视频转码器"""
     
-    def __init__(self, download_dir: str, start_index: int = 0):
+    def __init__(self, download_dir: str):
         """初始化转码器"""
         self.download_dir = download_dir
-        self._transcode_index = start_index
-
-    def transcode_video(self, resource: VideoResource) -> DownloadResult:
+        self._transcode_index = 0
+        self._index_lock = threading.Lock()
+    
+    def transcode_video(self, resource: VideoResource, download_dir: Optional[str] = None) -> DownloadResult:
         """
         转码视频
 
         Args:
             resource: 视频资源对象
+            download_dir: 可选的下载目录，如果提供则覆盖默认目录
 
         Returns:
             DownloadResult: 转码结果
         """
-        # 使用当前的 index（不再递增，由调用者管理）
-        current_index = self._transcode_index
+        # 线程安全地获取并递增index
+        with self._index_lock:
+            self._transcode_index += 1
+            current_index = self._transcode_index
 
-        resource_dir = os.path.join(self.download_dir, resource.resource_id)
+        # 使用传入的 download_dir 或默认目录
+        actual_download_dir = download_dir if download_dir is not None else self.download_dir
+
+        resource_dir = os.path.join(actual_download_dir, resource.resource_id)
         metadata_file = os.path.join(resource_dir, 'metadata.json')
 
         if not os.path.exists(resource_dir) or not os.path.exists(metadata_file):
@@ -56,7 +63,7 @@ class VideoTranscoder:
                 safe_title = resource.resource_id
 
             # 在文件名前加上index
-            output_file = os.path.join(self.download_dir, f"{current_index}.{safe_title}.mp4")
+            output_file = os.path.join(actual_download_dir, f"{current_index}.{safe_title}.mp4")
 
             # 检查输出文件是否已存在
             if os.path.exists(output_file):

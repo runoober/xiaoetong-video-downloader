@@ -3,7 +3,6 @@
 
 import os
 import traceback
-import threading
 from typing import List, Dict, Tuple, Optional
 
 from ..models.config import XiaoetConfig
@@ -24,8 +23,6 @@ class XiaoetDownloadManager:
         self.api_client = XiaoetAPIClient(config)
         self.downloader = VideoDownloader(config)
         self.transcoder = VideoTranscoder(config.download_dir)
-        self._transcode_index = 0
-        self._index_lock = threading.Lock()
         
         # 确保下载目录存在
         FileUtils.ensure_dir(config.download_dir)
@@ -91,7 +88,7 @@ class XiaoetDownloadManager:
 
         # 处理每个资源
         for index, (resource_id, resource_title) in enumerate(resource_items):
-            # for test
+            # 为了测试
             # if index > 2 :
             #     break
             try:
@@ -157,14 +154,8 @@ class XiaoetDownloadManager:
         )
 
         if download_result.success and auto_transcode:
-            # 线程安全地获取并递增index
-            with self._index_lock:
-                self._transcode_index += 1
-                current_index = self._transcode_index
-            
-            # 自动转码，为当前下载目录创建临时转码器，传入当前index
-            temp_transcoder = VideoTranscoder(download_dir, start_index=current_index)
-            transcode_result = temp_transcoder.transcode_video(resource)
+            # 使用全局转码器，传入当前下载目录
+            transcode_result = self.transcoder.transcode_video(resource, download_dir=download_dir)
             if transcode_result.success:
                 results['success'].append(transcode_result)
             else:
