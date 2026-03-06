@@ -164,7 +164,7 @@ class VideoDownloader:
                     with open(temp_file, 'wb') as f:
                         f.write(response.content)
                     os.rename(temp_file, ts_file)
-                    logger.info(f"[{current}/{total}] 下载成功: {os.path.basename(ts_file)}")
+                    # logger.info(f"[{current}/{total}] 下载成功: {os.path.basename(ts_file)}")
                     return True
                 else:
                     logger.warning(f"[{current}/{total}] 下载失败: HTTP {response.status_code}")

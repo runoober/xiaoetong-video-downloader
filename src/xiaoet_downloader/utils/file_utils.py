@@ -6,6 +6,7 @@ import re
 import json
 import subprocess
 import sys
+import shutil
 from typing import Optional
 from pathlib import Path
 
@@ -55,6 +56,17 @@ class FileUtils:
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
+                return True
+        except OSError:
+            pass
+        return False
+    
+    @staticmethod
+    def remove_directory_safely(directory: str) -> bool:
+        """安全删除目录及其所有内容"""
+        try:
+            if os.path.exists(directory):
+                shutil.rmtree(directory)
                 return True
         except OSError:
             pass

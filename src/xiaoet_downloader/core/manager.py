@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import os
+import traceback
+import threading
 from typing import List, Dict, Tuple, Optional
 
 from ..models.config import XiaoetConfig
@@ -22,6 +24,8 @@ class XiaoetDownloadManager:
         self.api_client = XiaoetAPIClient(config)
         self.downloader = VideoDownloader(config)
         self.transcoder = VideoTranscoder(config.download_dir)
+        self._transcode_index = 0
+        self._index_lock = threading.Lock()
         
         # 确保下载目录存在
         FileUtils.ensure_dir(config.download_dir)
@@ -29,11 +33,11 @@ class XiaoetDownloadManager:
     def download_course(self, nocache: bool = False, auto_transcode: bool = True) -> Dict[str, List[DownloadResult]]:
         """
         下载整个课程
-        
+
         Args:
             nocache: 是否忽略缓存
             auto_transcode: 是否自动转码
-            
+
         Returns:
             Dict[str, List[DownloadResult]]: 下载结果统计
         """
@@ -41,83 +45,136 @@ class XiaoetDownloadManager:
             'success': [],
             'failed': []
         }
-        
+
         try:
             # 获取用户信息
-            navigation_info = self.api_client.get_micro_navigation_info()
-            user_id = navigation_info.get('user_id')
+            # navigation_info = self.api_client.get_micro_navigation_info()
+            user_id = self.api_client.get_user_id()
             if not user_id:
                 logger.error("无法获取用户ID")
                 return results
-            
-            # 获取课程资源列表
-            resource_items = self.api_client.get_column_items(self.config.product_id)
-            if not resource_items:
-                logger.warning("未找到课程资源")
+            # 获取子课程列表
+            sub_courses = self.api_client.get_sub_courses()
+            if not sub_courses:
+                logger.warning("未找到子课程")
                 return results
-            
-            logger.info(f"找到 {len(resource_items)} 个视频资源")
-            
-            # 处理每个资源
-            for index, (resource_id, resource_title) in enumerate(resource_items):
-                try:
-                    logger.info(f"[{index+1}/{len(resource_items)}] 处理视频: {resource_title} ({resource_id})")
-                    
-                    # 创建视频资源对象
-                    resource = VideoResource(
-                        resource_id=resource_id,
-                        title=resource_title,
-                        resource_type=ResourceType.VIDEO if resource_id.startswith('v_') else ResourceType.AUDIO
-                    )
-                    
-                    # 只处理视频资源
-                    if resource.resource_type != ResourceType.VIDEO:
-                        logger.info(f"跳过非视频资源: {resource_title}")
-                        continue
-                    
-                    # 获取播放URL
-                    play_url = self._get_play_url(resource, user_id)
-                    if not play_url:
-                        result = DownloadResult(resource, False, "无法获取播放地址")
-                        results['failed'].append(result)
-                        continue
-                    
-                    # 下载视频
-                    download_result = self.downloader.download_m3u8_video(
-                        resource, play_url, self.config.download_dir, nocache
-                    )
-                    
-                    if download_result.success and auto_transcode:
-                        # 自动转码
-                        transcode_result = self.transcoder.transcode_video(resource)
-                        if transcode_result.success:
-                            results['success'].append(transcode_result)
-                        else:
-                            results['failed'].append(transcode_result)
-                    elif download_result.success:
-                        results['success'].append(download_result)
-                    else:
-                        results['failed'].append(download_result)
-                        
-                except Exception as e:
-                    error_msg = f"处理视频 {resource_title} 时出错: {str(e)}"
-                    logger.error(error_msg)
-                    result = DownloadResult(
-                        VideoResource(resource_id, resource_title), 
-                        False, 
-                        error_msg
-                    )
-                    results['failed'].append(result)
-            
-            # 打印处理结果
-            self._print_summary(results)
-            
+            logger.info(f"找到 {len(sub_courses)} 个子课程")
+
+            # 处理每个子课程
+            for index, (sub_course_id, section_count) in enumerate(sub_courses):
+                logger.info(f"[{index+1}/{len(sub_courses)}] 处理子课程: {sub_course_id} ({section_count} 节)")
+
+                results = self.download_subcourse_group(sub_course_id, user_id, nocache=nocache, auto_transcode=auto_transcode)
+
         except Exception as e:
             logger.error(f"下载课程时发生错误: {str(e)}")
-        
+            traceback.print_exc()
+
         return results
-    
-    def download_single_video(self, resource_id: str, nocache: bool = False, 
+
+    def download_subcourse_group(self, sub_course_id: str, user_id: str, p_id=0, nocache: bool = False, auto_transcode: bool = True, download_dir: Optional[str] = None) -> dict[str, list[DownloadResult]]:
+        if download_dir is None:
+            download_dir = self.config.download_dir
+
+        results = {
+            'success': [],
+            'failed': []
+        }
+
+        # 获取课程资源列表
+        resource_items = self.api_client.get_column_items(self.config.product_id, sub_course_id, p_id=p_id)
+        if not resource_items:
+            logger.warning(f"{sub_course_id} 未找到课程资源")
+            return results
+
+        logger.info(f"找到 {len(resource_items)} 个视频资源")
+
+        # 处理每个资源
+        for index, (resource_id, resource_title) in enumerate(resource_items):
+            # for test
+            # if index > 2 :
+            #     break
+            try:
+                logger.info(f"[{index + 1}/{len(resource_items)}] 处理视频: {resource_title} ({resource_id})")
+
+                # 创建视频资源对象
+                resource = VideoResource(
+                    resource_id=resource_id,
+                    title=resource_title,
+                    resource_type=(
+                        ResourceType.VIDEO if resource_id.startswith('v_') else
+                        ResourceType.CHAP if resource_id.startswith('chap_') else
+                        ResourceType.OTHER
+                    )
+                )
+                if resource.resource_type == ResourceType.CHAP:
+                    # 递归下载整个课程
+                    logger.info("开始下载章节")
+                    # 为章节创建单独的文件夹
+                    chapter_dir = os.path.join(download_dir, FileUtils.sanitize_filename(str(index + 1) + " " + resource_title))
+                    FileUtils.ensure_dir(chapter_dir)
+                    # 递归调用，传入章节目录
+                    chapter_results = self.download_subcourse_group(sub_course_id, user_id, p_id=resource_id, nocache=nocache, auto_transcode=auto_transcode, download_dir=chapter_dir)
+                    # 合并结果
+                    results['success'].extend(chapter_results['success'])
+                    results['failed'].extend(chapter_results['failed'])
+                    continue
+
+                # 只处理视频资源
+                if resource.resource_type != ResourceType.VIDEO:
+                    logger.info(f"跳过非视频资源: {resource_title}")
+                    continue
+
+                # 获取播放URL
+                play_url = self._get_play_url(resource, user_id)
+                if not play_url:
+                    result = DownloadResult(resource, False, "无法获取播放地址")
+                    results['failed'].append(result)
+                    continue
+
+                # 下载视频
+                self.download_video(resource, play_url, auto_transcode, nocache, results, download_dir)
+
+            except Exception as e:
+                error_msg = f"处理视频 {resource_title} 时出错: {str(e)}"
+                logger.error(error_msg)
+                result = DownloadResult(
+                    VideoResource(resource_id, resource_title),
+                    False,
+                    error_msg
+                )
+                results['failed'].append(result)
+
+        # 打印处理结果
+        self._print_summary(results)
+        return results
+
+    def download_video(self, resource: VideoResource, video_url: str, auto_transcode: bool, nocache: bool,
+                       results: dict[str, list[DownloadResult]], download_dir: str):
+        # 下载视频
+        download_result = self.downloader.download_m3u8_video(
+            resource, video_url, download_dir, nocache
+        )
+
+        if download_result.success and auto_transcode:
+            # 线程安全地获取并递增index
+            with self._index_lock:
+                self._transcode_index += 1
+                current_index = self._transcode_index
+            
+            # 自动转码，为当前下载目录创建临时转码器，传入当前index
+            temp_transcoder = VideoTranscoder(download_dir, start_index=current_index)
+            transcode_result = temp_transcoder.transcode_video(resource)
+            if transcode_result.success:
+                results['success'].append(transcode_result)
+            else:
+                results['failed'].append(transcode_result)
+        elif download_result.success:
+            results['success'].append(download_result)
+        else:
+            results['failed'].append(download_result)
+
+    def download_single_video(self, resource_id: str, nocache: bool = False,
                              auto_transcode: bool = True) -> DownloadResult:
         """
         下载单个视频
@@ -132,8 +189,8 @@ class XiaoetDownloadManager:
         """
         try:
             # 获取用户信息
-            navigation_info = self.api_client.get_micro_navigation_info()
-            user_id = navigation_info.get('user_id')
+            # navigation_info = self.api_client.get_micro_navigation_info()
+            user_id = self.api_client.get_user_id()
             if not user_id:
                 return DownloadResult(
                     VideoResource(resource_id, "未知"), 

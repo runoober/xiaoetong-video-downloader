@@ -11,6 +11,8 @@ class ResourceType(Enum):
     VIDEO = 'video'
     AUDIO = 'audio'
     PRODUCT = 'product'
+    CHAP = 'chap'
+    OTHER = 'other'
 
 
 class DownloadStatus(Enum):
