@@ -111,7 +111,8 @@ class XiaoetDownloadManager:
                     chapter_dir = os.path.join(download_dir, FileUtils.sanitize_filename(str(index + 1) + " " + resource_title))
                     FileUtils.ensure_dir(chapter_dir)
                     # 递归调用，传入章节目录
-                    chapter_results = self.download_subcourse_group(sub_course_id, user_id, p_id=resource_id, nocache=nocache, auto_transcode=auto_transcode, download_dir=chapter_dir)
+                    with logger.indent():
+                        chapter_results = self.download_subcourse_group(sub_course_id, user_id, p_id=resource_id, nocache=nocache, auto_transcode=auto_transcode, download_dir=chapter_dir)
                     # 合并结果
                     results['success'].extend(chapter_results['success'])
                     results['failed'].extend(chapter_results['failed'])

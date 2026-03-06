@@ -20,6 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from xiaoet_downloader import XiaoetConfig, XiaoetDownloadManager, logger
+from xiaoet_downloader.api.client import XiaoetAPIClient
+from xiaoet_downloader.utils.file_utils import FileUtils
 
 
 def main():
@@ -88,6 +90,29 @@ def main():
             return 1
 
         config = XiaoetConfig.from_file(args.config)
+
+        # 如果从 URL 解析出了 app_id 或 product_id，显示提示信息
+        if config.url:
+            logger.info(f"使用课程 URL: {config.url}")
+            logger.info(f"app_id: {config.app_id}")
+            logger.info(f"product_id: {config.product_id}")
+
+        try:
+            client = XiaoetAPIClient(config)
+            course_info = client.get_course_info(config.product_id)
+            resource_name = course_info.get('resource_name', '').strip()
+            
+            if resource_name:
+                safe_resource_name = FileUtils.sanitize_filename(resource_name)
+                original_download_dir = config.download_dir
+                config.download_dir = os.path.join(original_download_dir, safe_resource_name)
+                logger.info(f"课程名称: {resource_name}")
+                logger.info(f"下载路径已更新为: {config.download_dir}")
+            else:
+                logger.warning("未能获取课程名称，使用默认下载路径")
+        except Exception as e:
+            logger.warning(f"获取课程名称失败: {str(e)}，使用默认下载路径")
+
         manager = XiaoetDownloadManager(config)
 
         # 检查环境

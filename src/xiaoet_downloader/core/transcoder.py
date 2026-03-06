@@ -78,7 +78,7 @@ class VideoTranscoder:
             input_file = os.path.join(resource_dir, 'video.m3u8')
             ff = ffmpy.FFmpeg(
                 inputs={input_file: ['-protocol_whitelist', 'crypto,file,http,https,tcp,tls']},
-                outputs={output_file: "-c:v copy -c:a copy"}
+                outputs={output_file: "-c:v copy -c:a copy -loglevel warning"}
             )
 
             logger.info(f"执行命令: {ff.cmd}")

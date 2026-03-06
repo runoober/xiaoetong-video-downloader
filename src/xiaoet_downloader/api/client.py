@@ -133,6 +133,7 @@ class XiaoetAPIClient:
     GET_VIDEO_DETAILS_INFO_URL = "https://{0}.h5.xiaoeknow.com/xe.course.business.video.detail_info.get/2.0.0"
     GET_MICRO_NAVIGATION_URL = "https://{0}.h5.xiaoeknow.com/xe.micro_page.navigation.get/1.0.0"
     GET_PLAY_URL = "https://{0}.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl"
+    GET_COURSE_INFO_URL = "https://{0}.h5.xet.citv.cn/xe.course.business.core.info.get/2.0.0"
 
     def __init__(self, config: XiaoetConfig):
         """初始化API客户端"""
@@ -296,3 +297,23 @@ class XiaoetAPIClient:
                 return play_list_dict.get(quality, {}).get('play_url'), quality
 
         return None, None
+
+    def get_course_info(self, resource_id: str) -> Dict[str, Any]:
+        """获取课程信息"""
+        url = self.GET_COURSE_INFO_URL.format(self.config.app_id)
+        payload = {
+            'bizData[resource_id]': resource_id,
+        }
+        headers = {
+            'cookie': self.config.cookie,
+        }
+
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            response.raise_for_status()
+            data = response.json().get('data', {})
+            return data
+        except requests.RequestException as e:
+            raise Exception(f"获取课程信息失败: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise Exception(f"解析课程信息响应失败: {str(e)}")

@@ -3,6 +3,7 @@
 
 import logging
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -12,6 +13,8 @@ class Logger:
     
     _instance: Optional['Logger'] = None
     _logger: Optional[logging.Logger] = None
+    _indent_level: int = 0
+    _indent_size: int = 2
     
     def __new__(cls) -> 'Logger':
         if cls._instance is None:
@@ -21,6 +24,10 @@ class Logger:
     def __init__(self):
         if self._logger is None:
             self._setup_logger()
+    
+    def _get_indent(self) -> str:
+        """获取当前缩进字符串"""
+        return ' ' * (self._indent_level * self._indent_size)
     
     def _setup_logger(self) -> None:
         """设置日志记录器"""
@@ -59,27 +66,40 @@ class Logger:
     def info(self, message: str) -> None:
         """记录信息日志"""
         if self._logger:
-            self._logger.info(message)
+            indented_message = self._get_indent() + message
+            self._logger.info(indented_message)
     
     def warning(self, message: str) -> None:
         """记录警告日志"""
         if self._logger:
-            self._logger.warning(message)
+            indented_message = self._get_indent() + message
+            self._logger.warning(indented_message)
     
     def error(self, message: str) -> None:
         """记录错误日志"""
         if self._logger:
-            self._logger.error(message)
+            indented_message = self._get_indent() + message
+            self._logger.error(indented_message)
     
     def debug(self, message: str) -> None:
         """记录调试日志"""
         if self._logger:
-            self._logger.debug(message)
+            indented_message = self._get_indent() + message
+            self._logger.debug(indented_message)
     
     def set_level(self, level: int) -> None:
         """设置日志级别"""
         if self._logger:
             self._logger.setLevel(level)
+    
+    @contextmanager
+    def indent(self):
+        """增加缩进级别的上下文管理器"""
+        self._indent_level += 1
+        try:
+            yield
+        finally:
+            self._indent_level -= 1
 
 
 # 全局日志实例
